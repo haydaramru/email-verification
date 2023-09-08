@@ -43,8 +43,141 @@ const signup = async (req, res) => {
                     subject: "Account Verification Link",
                     text: `Hello, ${userName}. Please verify your email by clicking this link:
                             `
-                })
+                });
+
+                // if token is not created, send a status of 400
+            } else {
+                return res.status(400).send("Token not created");
+            }
+
+            console.log("user", JSON.stringify(user, null, 2));
+
+            // send users details
+            return res.status(201).send(user);
+        } else {
+            return res.status(409).send("Details are not correct");
+        }
+    } catch(error) {
+        console.log(error);
+    }
+};
+
+// verifying the email of the user
+const verifyEmail = async (req, res) => {
+    try {
+        const token = req.param.token;
+
+        // find user by token using the where clause
+        const userToken = await Token.findOne({
+            token,
+            where: {
+                userId: req.param.id,
+            },
+        });
+        console.log(userToken);
+
+        // if token doesn exist, send status of 400
+        if(!userToken) {
+            return res.status(400).send({
+                msg: "Your verification link may have expired. Please click on resend for verify your Email."
+            });
+
+            // if token exist, find the user with that token
+        } else {
+            const user = await User.findOne({
+                where: {
+                    id: req.param.id
+                }
+            });
+
+            if(!user) {
+                console.log(user);
+
+                return res.status(401).send({
+                    msg: "We were unable to find a user for this verification. Please Sign Up!",
+                });
+
+                // if user is not verified, change the verified to true by updating the field
+            } else {
+                const updated = await User.update(
+                    { isVerified: true },
+                    {
+                        where: {
+                            id: userToken.userId,
+                        },
+                    }
+                );
+                console.log(updated);
+
+                // if not updated send error message
+                if(!updated) {
+                    return res.status(500).send({ msg: error.message });
+                    
+                    // else send status of 200
+                } else {
+                    return res
+                        .status(200)
+                        .send("Your account has been successfully verified");
+                }
             }
         }
+    } catch(error) {
+        console.log(error);
     }
-}
+};
+
+// login authentication
+const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        //find a user by their email
+        const user = await User.findOne({ email });
+
+        console.log(user);
+
+        // if user email is found, compare password with bcrypt
+        if(user) {
+            //
+            const isSame = await bcrypt.compare(password, user.password);
+
+            // if password is the same, check if the user is verified,
+            // if verified, generate a token and use it to set cookies for he user
+            if(isSame) {
+                // check if they are verified
+                const verified = user.isVerified;
+                
+                if(verified) {
+                    let token = Jwt.sign({ id: user.id }, process.env.secretKey, {
+                        expresIn: 1 * 24 * 60 * 60 * 1000,
+                    });
+
+                    res.cookie("Jwt", token, {
+                        maxAge: 1 * 24 * 60 * 60,
+                        httpOnly: true,
+                    });
+                    console.log("user", JSON.stringify(user, null, 2));
+                    console.log(token);
+
+                    // send user data
+                    return res.status(201).send(user);
+                } else {
+                    return res.status(401).send("User not verified");
+                }
+            } else {
+                return res.status(401).send("Authentication failed");
+            }
+        } else {
+            return res.status(401).send("Authentication failed");
+        }
+    } catch(error) {
+        console.log(error);
+    }
+};
+
+// exporting the modules
+module.exports = {
+    signup,
+    login,
+    verifyEmail,
+};
